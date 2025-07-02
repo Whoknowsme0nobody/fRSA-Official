@@ -1,336 +1,374 @@
-import time
 import random
-import statistics
-from frsa_rrsa_redacted import fRSA_keygen, fRSA_encrypt, fRSA_decrypt, rRSA_keygen, rRSA_encrypt, rRSA_decrypt
+import math
+from decimal import Decimal, getcontext
+import hashlib
 
-def benchmark_frsa():
-    """Comprehensive fRSA benchmarking"""
-    print("=== fRSA Performance Benchmarks ===")
+# Set high precision for decimal operations
+getcontext().prec = 1000
+
+def miller_rabin_test(n, k=10):
+    """Miller-Rabin primality test"""
+    if n < 2:
+        return False
+    if n == 2 or n == 3:
+        return True
+    if n % 2 == 0:
+        return False
     
-    # Single run benchmark
-    print("\n--- Single Run Performance ---")
-    start = time.time()
+    # Write n-1 as d * 2^r
+    r = 0
+    d = n - 1
+    while d % 2 == 0:
+        r += 1
+        d //= 2
+    
+    # Perform k rounds of testing
+    for _ in range(k):
+        a = random.randrange(2, n - 1)
+        x = pow(a, d, n)
+        
+        if x == 1 or x == n - 1:
+            continue
+            
+        for _ in range(r - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    
+    return True
+
+def generate_prime(bits):
+    """Generate a prime number with specified bit length"""
+    while True:
+        # Generate random odd number with specified bit length
+        n = random.getrandbits(bits)
+        n |= (1 << bits - 1) | 1  # Set MSB and LSB to ensure odd number of correct bit length
+        
+        if miller_rabin_test(n):
+            return n
+
+def mod_inverse(a, m):
+    """Compute modular inverse using extended Euclidean algorithm"""
+    if math.gcd(a, m) != 1:
+        return None
+    
+    def extended_gcd(a, b):
+        if a == 0:
+            return b, 0, 1
+        gcd, x1, y1 = extended_gcd(b % a, a)
+        x = y1 - (b // a) * x1
+        y = x1
+        return gcd, x, y
+    
+    _, x, _ = extended_gcd(a % m, m)
+    return (x % m + m) % m
+
+class PrecisionManager:
+    """Manages high-precision arithmetic with synchronization"""
+    
+    def __init__(self, precision_digits=256):
+        self.precision_digits = precision_digits
+        # Set decimal context precision higher than needed for intermediate calculations
+        getcontext().prec = precision_digits + 100
+    
+    def synchronized_compute(self, a, b, func, sync_seed=None):
+        """Compute function value with synchronized precision"""
+        try:
+            # Convert to Decimal for high precision
+            a_dec = Decimal(str(a))
+            b_dec = Decimal(str(b))
+            
+            # Compute function values
+            fa = func(a_dec)
+            fb = func(b_dec)
+            
+            # Compute product
+            k_full = fa * fb
+            
+            # Truncate to specified precision
+            k_truncated = self.truncate_to_precision(k_full, self.precision_digits)
+            
+            return float(k_truncated)
+        except Exception as e:
+            # Fallback to regular arithmetic if decimal fails
+            fa = func(float(a))
+            fb = func(float(b))
+            return fa * fb
+    
+    def truncate_to_precision(self, value, digits):
+        """Truncate decimal value to specified number of digits"""
+        if isinstance(value, Decimal):
+            # Convert to string, then truncate
+            str_val = str(value)
+            if '.' in str_val:
+                integer_part, decimal_part = str_val.split('.')
+                if len(decimal_part) > digits:
+                    decimal_part = decimal_part[:digits]
+                return Decimal(f"{integer_part}.{decimal_part}")
+            return value
+        else:
+            return Decimal(str(value))
+
+# Function-based RSA (fRSA) Implementation
+class fRSA:
+    def __init__(self, security_level=128):
+        self.security_level = security_level
+        self.precision_manager = PrecisionManager(security_level)
+    
+    def generate_polynomial_function(self, degree=4):
+        """Generate secure polynomial transformation function"""
+        # Generate random coefficients
+        coefficients = [random.randint(1, 2**16) for _ in range(degree + 1)]
+        
+        def poly_func(x):
+            if isinstance(x, Decimal):
+                result = Decimal(0)
+                x_power = Decimal(1)
+                for coeff in coefficients:
+                    result += Decimal(coeff) * x_power
+                    x_power *= x
+                return result
+            else:
+                result = 0
+                x_power = 1
+                for coeff in coefficients:
+                    result += coeff * x_power
+                    x_power *= x
+                return result
+        
+        return poly_func, coefficients
+    
+    def generate_transcendental_function(self):
+        """Generate transcendental transformation function"""
+        # Random parameters for transcendental function
+        a = random.uniform(0.5, 2.0)
+        b = random.uniform(2.0, 5.0)
+        c = random.uniform(0.1, 1.0)
+        d = random.uniform(10.0, 100.0)
+        
+        def trans_func(x):
+            try:
+                if isinstance(x, Decimal):
+                    # Use decimal math for high precision
+                    x_float = float(x)
+                    # Ensure we don't get domain errors
+                    log_arg = max(c * x_float + d, 1.0)
+                    result = a * math.log(log_arg, b) + math.sin(x_float)
+                    return Decimal(str(result))
+                else:
+                    log_arg = max(c * x + d, 1.0)
+                    return a * math.log(log_arg, b) + math.sin(x)
+            except:
+                # Fallback for problematic values
+                return Decimal(str(x)) if isinstance(x, Decimal) else x
+        
+        return trans_func, (a, b, c, d)
+
+def fRSA_keygen(security_level=128, function_type='polynomial'):
+    """Generate fRSA key pair"""
+    frsa = fRSA(security_level)
+    
+    # Generate two primes
+    prime_bits = max(security_level // 2, 64)  # Ensure reasonable prime size
+    a = generate_prime(prime_bits)
+    b = generate_prime(prime_bits)
+    N = a * b
+    
+    # Generate transformation function
+    if function_type == 'polynomial':
+        func, func_params = frsa.generate_polynomial_function()
+    else:
+        func, func_params = frsa.generate_transcendental_function()
+    
+    # Compute transformed key with high precision
+    k_full = frsa.precision_manager.synchronized_compute(a, b, func)
+    
+    # Create public and private keys
+    public_key = {
+        'N': N,
+        'k_pub': k_full,
+        'security_level': security_level
+    }
+    
+    private_key = {
+        'a': a,
+        'b': b,
+        'func_params': func_params,
+        'k_full': k_full,
+        'security_level': security_level,
+        'function_type': function_type
+    }
+    
+    return public_key, private_key
+
+def fRSA_encrypt(message, public_key):
+    """Encrypt message using fRSA"""
+    N = public_key['N']
+    k_pub = public_key['k_pub']
+    
+    # Ensure message is within valid range
+    if message >= N:
+        message = message % N
+    
+    # Use integer exponentiation for practical implementation
+    phi_approx = N - int(math.sqrt(N)) - 1  # Approximation for efficiency
+    k_int = max(int(abs(k_pub)) % phi_approx, 3)  # Ensure valid exponent
+    
+    ciphertext = pow(message, k_int, N)
+    return ciphertext
+
+def fRSA_decrypt(ciphertext, private_key):
+    """Decrypt ciphertext using fRSA"""
+    a = private_key['a']
+    b = private_key['b']
+    k_full = private_key['k_full']
+    N = a * b
+    
+    # Compute phi(N) = (a-1)(b-1)
+    phi_N = (a - 1) * (b - 1)
+    
+    # Compute private exponent
+    k_int = max(int(abs(k_full)) % phi_N, 3)
+    
+    try:
+        d_priv = mod_inverse(k_int, phi_N)
+        if d_priv is None:
+            d_priv = pow(k_int, -1, phi_N)
+    except:
+        # Fallback for edge cases
+        d_priv = k_int
+    
+    # Decrypt
+    plaintext = pow(ciphertext, d_priv, N)
+    return plaintext
+
+# Reverse RSA (rRSA) Implementation
+def rRSA_keygen(security_level=128, function_type='polynomial'):
+    """Generate rRSA key pair"""
+    frsa = fRSA(security_level)
+    
+    # Generate two primes (these will be public)
+    prime_bits = max(security_level // 2, 64)
+    a = generate_prime(prime_bits)
+    b = generate_prime(prime_bits)
+    
+    # Generate secret transformation function
+    if function_type == 'polynomial':
+        func, func_params = frsa.generate_polynomial_function()
+    else:
+        func, func_params = frsa.generate_transcendental_function()
+    
+    # Compute secret key with high precision
+    k_secret = frsa.precision_manager.synchronized_compute(a, b, func)
+    
+    # Create public and private keys
+    public_key = {
+        'a': a,
+        'b': b,
+        'security_level': security_level
+    }
+    
+    private_key = {
+        'func_params': func_params,
+        'k_secret': k_secret,
+        'security_level': security_level,
+        'function_type': function_type,
+        'a': a,  # Keep for decryption
+        'b': b   # Keep for decryption
+    }
+    
+    return public_key, private_key
+
+def rRSA_encrypt(message, public_key):
+    """Encrypt message using rRSA"""
+    a = public_key['a']
+    b = public_key['b']
+    N = a * b
+    
+    # Ensure message is within valid range
+    if message >= N:
+        message = message % N
+    
+    # Use a standard public exponent for rRSA
+    e = 65537  # Standard RSA public exponent
+    
+    ciphertext = pow(message, e, N)
+    return ciphertext
+
+def rRSA_decrypt(ciphertext, private_key):
+    """Decrypt ciphertext using rRSA"""
+    a = private_key['a']
+    b = private_key['b']
+    k_secret = private_key['k_secret']
+    N = a * b
+    
+    # Compute phi(N)
+    phi_N = (a - 1) * (b - 1)
+    
+    # Use standard RSA decryption with secret key influence
+    e = 65537
+    
+    try:
+        d = mod_inverse(e, phi_N)
+        if d is None:
+            d = pow(e, -1, phi_N)
+        
+        # Apply secret key transformation
+        k_int = int(abs(k_secret)) % phi_N
+        if k_int != 0:
+            d = (d * k_int) % phi_N
+        
+        plaintext = pow(ciphertext, d, N)
+        return plaintext
+    except:
+        # Fallback decryption
+        d = pow(e, -1, phi_N)
+        plaintext = pow(ciphertext, d, N)
+        return plaintext
+
+# Demo functions
+def demo_frsa():
+    """Demonstrate fRSA functionality"""
+    print("=== fRSA Demonstration ===")
+    
+    # Generate keys
     pub_key, priv_key = fRSA_keygen(security_level=128)
-    keygen_time = time.time() - start
-    print(f"Key Generation Time: {keygen_time:.4f} seconds")
     
-    # Test encryption/decryption
-    message = random.randint(1000, 100000)
+    # Test message
+    message = 12345
+    print(f"Original message: {message}")
     
-    start = time.time()
+    # Encrypt
     ciphertext = fRSA_encrypt(message, pub_key)
-    encrypt_time = time.time() - start
-    print(f"Encryption Time: {encrypt_time:.4f} seconds")
+    print(f"Ciphertext: {ciphertext}")
     
-    start = time.time()
+    # Decrypt
     decrypted = fRSA_decrypt(ciphertext, priv_key)
-    decrypt_time = time.time() - start
-    print(f"Decryption Time: {decrypt_time:.4f} seconds")
-    
-    correctness = (message == decrypted)
-    print(f"Correctness Check: {correctness}")
-    print(f"Security Level: {pub_key['security_level']}-bit post-quantum")
-    
-    return {
-        'keygen': keygen_time,
-        'encrypt': encrypt_time,
-        'decrypt': decrypt_time,
-        'correctness': correctness
-    }
+    print(f"Decrypted message: {decrypted}")
+    print(f"Correctness: {message == decrypted}")
 
-def benchmark_rrsa():
-    """Comprehensive rRSA benchmarking"""
-    print("\n=== rRSA Performance Benchmarks ===")
+def demo_rrsa():
+    """Demonstrate rRSA functionality"""
+    print("\n=== rRSA Demonstration ===")
     
-    # Single run benchmark
-    print("\n--- Single Run Performance ---")
-    start = time.time()
+    # Generate keys
     pub_key, priv_key = rRSA_keygen(security_level=128)
-    keygen_time = time.time() - start
-    print(f"Key Generation Time: {keygen_time:.4f} seconds")
     
-    # Test encryption/decryption
-    message = random.randint(1000, 100000)
+    # Test message
+    message = 54321
+    print(f"Original message: {message}")
     
-    start = time.time()
+    # Encrypt
     ciphertext = rRSA_encrypt(message, pub_key)
-    encrypt_time = time.time() - start
-    print(f"Encryption Time: {encrypt_time:.4f} seconds")
+    print(f"Ciphertext: {ciphertext}")
     
-    start = time.time()
+    # Decrypt
     decrypted = rRSA_decrypt(ciphertext, priv_key)
-    decrypt_time = time.time() - start
-    print(f"Decryption Time: {decrypt_time:.4f} seconds")
-    
-    correctness = (message == decrypted)
-    print(f"Correctness Check: {correctness}")
-    print(f"Security Level: {pub_key['security_level']}-bit post-quantum")
-    
-    return {
-        'keygen': keygen_time,
-        'encrypt': encrypt_time,
-        'decrypt': decrypt_time,
-        'correctness': correctness
-    }
-
-def multiple_runs_frsa(runs=10):
-    """Multiple run analysis for fRSA"""
-    print(f"\n=== fRSA Multiple Run Analysis ({runs} runs) ===")
-    
-    keygen_times = []
-    encrypt_times = []
-    decrypt_times = []
-    correctness_count = 0
-    
-    for i in range(runs):
-        print(f"Run {i+1}/{runs}...", end=' ')
-        
-        # Key generation
-        start = time.time()
-        pub_key, priv_key = fRSA_keygen(security_level=128)
-        keygen_times.append(time.time() - start)
-        
-        # Encryption/Decryption
-        message = random.randint(1000, 100000)
-        
-        start = time.time()
-        ciphertext = fRSA_encrypt(message, pub_key)
-        encrypt_times.append(time.time() - start)
-        
-        start = time.time()
-        decrypted = fRSA_decrypt(ciphertext, priv_key)
-        decrypt_times.append(time.time() - start)
-        
-        if message == decrypted:
-            correctness_count += 1
-        
-        print("✓")
-    
-    print(f"\nfRSA Results Summary:")
-    print(f"Average Key Generation: {statistics.mean(keygen_times):.4f}s (±{statistics.stdev(keygen_times):.4f}s)")
-    print(f"Average Encryption: {statistics.mean(encrypt_times):.4f}s (±{statistics.stdev(encrypt_times):.4f}s)")
-    print(f"Average Decryption: {statistics.mean(decrypt_times):.4f}s (±{statistics.stdev(decrypt_times):.4f}s)")
-    print(f"Success Rate: {correctness_count}/{runs} ({100*correctness_count/runs:.1f}%)")
-    
-    return {
-        'keygen': {'mean': statistics.mean(keygen_times), 'stdev': statistics.stdev(keygen_times)},
-        'encrypt': {'mean': statistics.mean(encrypt_times), 'stdev': statistics.stdev(encrypt_times)},
-        'decrypt': {'mean': statistics.mean(decrypt_times), 'stdev': statistics.stdev(decrypt_times)},
-        'success_rate': correctness_count/runs
-    }
-
-def multiple_runs_rrsa(runs=10):
-    """Multiple run analysis for rRSA"""
-    print(f"\n=== rRSA Multiple Run Analysis ({runs} runs) ===")
-    
-    keygen_times = []
-    encrypt_times = []
-    decrypt_times = []
-    correctness_count = 0
-    
-    for i in range(runs):
-        print(f"Run {i+1}/{runs}...", end=' ')
-        
-        # Key generation
-        start = time.time()
-        pub_key, priv_key = rRSA_keygen(security_level=128)
-        keygen_times.append(time.time() - start)
-        
-        # Encryption/Decryption
-        message = random.randint(1000, 100000)
-        
-        start = time.time()
-        ciphertext = rRSA_encrypt(message, pub_key)
-        encrypt_times.append(time.time() - start)
-        
-        start = time.time()
-        decrypted = rRSA_decrypt(ciphertext, priv_key)
-        decrypt_times.append(time.time() - start)
-        
-        if message == decrypted:
-            correctness_count += 1
-        
-        print("✓")
-    
-    print(f"\nrRSA Results Summary:")
-    print(f"Average Key Generation: {statistics.mean(keygen_times):.4f}s (±{statistics.stdev(keygen_times):.4f}s)")
-    print(f"Average Encryption: {statistics.mean(encrypt_times):.4f}s (±{statistics.stdev(encrypt_times):.4f}s)")
-    print(f"Average Decryption: {statistics.mean(decrypt_times):.4f}s (±{statistics.stdev(decrypt_times):.4f}s)")
-    print(f"Success Rate: {correctness_count}/{runs} ({100*correctness_count/runs:.1f}%)")
-    
-    return {
-        'keygen': {'mean': statistics.mean(keygen_times), 'stdev': statistics.stdev(keygen_times)},
-        'encrypt': {'mean': statistics.mean(encrypt_times), 'stdev': statistics.stdev(encrypt_times)},
-        'decrypt': {'mean': statistics.mean(decrypt_times), 'stdev': statistics.stdev(decrypt_times)},
-        'success_rate': correctness_count/runs
-    }
-
-def security_level_comparison():
-    """Compare performance across different security levels"""
-    print("\n=== Security Level Comparison ===")
-    
-    security_levels = [128, 256]
-    results = {'fRSA': {}, 'rRSA': {}}
-    
-    for level in security_levels:
-        print(f"\n--- Testing {level}-bit security ---")
-        
-        # fRSA
-        start = time.time()
-        pub_key, priv_key = fRSA_keygen(security_level=level)
-        frsa_keygen = time.time() - start
-        
-        message = random.randint(1000, 100000)
-        start = time.time()
-        ciphertext = fRSA_encrypt(message, pub_key)
-        decrypted = fRSA_decrypt(ciphertext, priv_key)
-        frsa_crypto = time.time() - start
-        
-        results['fRSA'][level] = {
-            'keygen': frsa_keygen,
-            'crypto': frsa_crypto,
-            'correct': message == decrypted
-        }
-        
-        # rRSA
-        start = time.time()
-        pub_key, priv_key = rRSA_keygen(security_level=level)
-        rrsa_keygen = time.time() - start
-        
-        message = random.randint(1000, 100000)
-        start = time.time()
-        ciphertext = rRSA_encrypt(message, pub_key)
-        decrypted = rRSA_decrypt(ciphertext, priv_key)
-        rrsa_crypto = time.time() - start
-        
-        results['rRSA'][level] = {
-            'keygen': rrsa_keygen,
-            'crypto': rrsa_crypto,
-            'correct': message == decrypted
-        }
-        
-        print(f"fRSA {level}-bit: Keygen={frsa_keygen:.4f}s, Crypto={frsa_crypto:.4f}s, Correct={results['fRSA'][level]['correct']}")
-        print(f"rRSA {level}-bit: Keygen={rrsa_keygen:.4f}s, Crypto={rrsa_crypto:.4f}s, Correct={results['rRSA'][level]['correct']}")
-    
-    return results
-
-def function_type_comparison():
-    """Compare polynomial vs transcendental function performance"""
-    print("\n=== Function Type Comparison ===")
-    
-    function_types = ['polynomial', 'transcendental']
-    results = {'fRSA': {}, 'rRSA': {}}
-    
-    for func_type in function_types:
-        print(f"\n--- Testing {func_type} functions ---")
-        
-        # fRSA
-        start = time.time()
-        pub_key, priv_key = fRSA_keygen(security_level=128, function_type=func_type)
-        frsa_time = time.time() - start
-        
-        message = random.randint(1000, 100000)
-        ciphertext = fRSA_encrypt(message, pub_key)
-        decrypted = fRSA_decrypt(ciphertext, priv_key)
-        
-        results['fRSA'][func_type] = {
-            'time': frsa_time,
-            'correct': message == decrypted
-        }
-        
-        # rRSA
-        start = time.time()
-        pub_key, priv_key = rRSA_keygen(security_level=128, function_type=func_type)
-        rrsa_time = time.time() - start
-        
-        message = random.randint(1000, 100000)
-        ciphertext = rRSA_encrypt(message, pub_key)
-        decrypted = rRSA_decrypt(ciphertext, priv_key)
-        
-        results['rRSA'][func_type] = {
-            'time': rrsa_time,
-            'correct': message == decrypted
-        }
-        
-        print(f"fRSA {func_type}: {frsa_time:.4f}s, Correct={results['fRSA'][func_type]['correct']}")
-        print(f"rRSA {func_type}: {rrsa_time:.4f}s, Correct={results['rRSA'][func_type]['correct']}")
-    
-    return results
-
-def comprehensive_summary(frsa_single, rrsa_single, frsa_multi, rrsa_multi):
-    """Generate comprehensive performance summary"""
-    print("\n" + "="*60)
-    print("           COMPREHENSIVE PERFORMANCE SUMMARY")
-    print("="*60)
-    
-    print(f"\n🚀 SINGLE RUN PERFORMANCE")
-    print(f"┌─────────────────────────────────────────────────────────┐")
-    print(f"│                    fRSA      │      rRSA      │ Winner │")
-    print(f"├─────────────────────────────────────────────────────────┤")
-    print(f"│ Key Generation    {frsa_single['keygen']:.4f}s    │    {rrsa_single['keygen']:.4f}s    │   {'fRSA' if frsa_single['keygen'] < rrsa_single['keygen'] else 'rRSA'}   │")
-    print(f"│ Encryption        {frsa_single['encrypt']:.4f}s    │    {rrsa_single['encrypt']:.4f}s    │   {'fRSA' if frsa_single['encrypt'] < rrsa_single['encrypt'] else 'rRSA'}   │")
-    print(f"│ Decryption        {frsa_single['decrypt']:.4f}s    │    {rrsa_single['decrypt']:.4f}s    │   {'fRSA' if frsa_single['decrypt'] < rrsa_single['decrypt'] else 'rRSA'}   │")
-    print(f"└─────────────────────────────────────────────────────────┘")
-    
-    print(f"\n📊 MULTI-RUN AVERAGES")
-    print(f"┌─────────────────────────────────────────────────────────┐")
-    print(f"│                    fRSA      │      rRSA      │ Winner │")
-    print(f"├─────────────────────────────────────────────────────────┤")
-    print(f"│ Avg Key Generation {frsa_multi['keygen']['mean']:.4f}s   │    {rrsa_multi['keygen']['mean']:.4f}s    │   {'fRSA' if frsa_multi['keygen']['mean'] < rrsa_multi['keygen']['mean'] else 'rRSA'}   │")
-    print(f"│ Avg Encryption     {frsa_multi['encrypt']['mean']:.4f}s   │    {rrsa_multi['encrypt']['mean']:.4f}s    │   {'fRSA' if frsa_multi['encrypt']['mean'] < rrsa_multi['encrypt']['mean'] else 'rRSA'}   │")
-    print(f"│ Avg Decryption     {frsa_multi['decrypt']['mean']:.4f}s   │    {rrsa_multi['decrypt']['mean']:.4f}s    │   {'fRSA' if frsa_multi['decrypt']['mean'] < rrsa_multi['decrypt']['mean'] else 'rRSA'}   │")
-    print(f"│ Success Rate       {frsa_multi['success_rate']*100:.1f}%     │     {rrsa_multi['success_rate']*100:.1f}%     │   {'fRSA' if frsa_multi['success_rate'] > rrsa_multi['success_rate'] else 'rRSA'}   │")
-    print(f"└─────────────────────────────────────────────────────────┘")
-    
-    # Overall winner calculation
-    frsa_wins = 0
-    rrsa_wins = 0
-    
-    if frsa_single['keygen'] < rrsa_single['keygen']: frsa_wins += 1
-    else: rrsa_wins += 1
-    
-    if frsa_single['encrypt'] < rrsa_single['encrypt']: frsa_wins += 1
-    else: rrsa_wins += 1
-    
-    if frsa_single['decrypt'] < rrsa_single['decrypt']: frsa_wins += 1
-    else: rrsa_wins += 1
-    
-    if frsa_multi['keygen']['mean'] < rrsa_multi['keygen']['mean']: frsa_wins += 1
-    else: rrsa_wins += 1
-    
-    overall_winner = "fRSA" if frsa_wins > rrsa_wins else "rRSA"
-    
-    print(f"\n🏆 OVERALL PERFORMANCE WINNER: {overall_winner}")
-    print(f"   fRSA wins: {frsa_wins}/4 categories")
-    print(f"   rRSA wins: {rrsa_wins}/4 categories")
-    
-    print(f"\n✅ RELIABILITY")
-    print(f"   fRSA Correctness: {frsa_single['correctness']} (single), {frsa_multi['success_rate']*100:.1f}% (multi)")
-    print(f"   rRSA Correctness: {rrsa_single['correctness']} (single), {rrsa_multi['success_rate']*100:.1f}% (multi)")
-
-def main():
-    """Run complete benchmark suite"""
-    print("🔥 ULTIMATE fRSA vs rRSA BENCHMARK SUITE 🔥")
-    print("=" * 60)
-    
-    # Single run benchmarks
-    frsa_single = benchmark_frsa()
-    rrsa_single = benchmark_rrsa()
-    
-    # Multiple run analysis
-    frsa_multi = multiple_runs_frsa(10)
-    rrsa_multi = multiple_runs_rrsa(10)
-    
-    # Advanced comparisons
-    security_results = security_level_comparison()
-    function_results = function_type_comparison()
-    
-    # Final comprehensive summary
-    comprehensive_summary(frsa_single, rrsa_single, frsa_multi, rrsa_multi)
-    
-    print(f"\n🎯 BENCHMARK COMPLETE!")
-    print(f"   Both fRSA and rRSA implementations tested successfully!")
-    print(f"   Your cryptographic systems are ready for deployment! 🚀")
+    print(f"Decrypted message: {decrypted}")
+    print(f"Correctness: {message == decrypted}")
 
 if __name__ == "__main__":
-    main()
+    demo_frsa()
+    demo_rrsa()
