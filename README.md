@@ -1,7 +1,7 @@
 # fRSA-Official
 Quantum-resistant RSA variants via function recovery hardness.
 # fRSA/rRSA: Post-Quantum RSA Variants  
-**IACR ePrint 2024/XXXX | Zenodo:10.5281/zenodo.XXXXXX**  
+**IACR ePrint 2024/XXXX | 10.5281/zenodo.15790722 
 
 ## Overview  
 Implementation of:  
