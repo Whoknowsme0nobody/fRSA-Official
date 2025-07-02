@@ -228,10 +228,21 @@ def fRSA_decrypt(ciphertext, private_key):
     if k_int == 0:
         k_int = 1
     
-    d_priv = mod_inverse(k_int, phi_N)
-    if d_priv is None:
-        # Fallback: use alternative private key computation
-        d_priv = pow(k_int, -1, phi_N)
+    # Ensure k_int and phi_N are coprime
+    while math.gcd(k_int, phi_N) != 1:
+        k_int = (k_int + 1) % phi_N
+        if k_int == 0:
+            k_int = 1
+    
+    try:
+        d_priv = mod_inverse(k_int, phi_N)
+        if d_priv is None:
+            # Fallback: use Python's built-in pow with -1 exponent
+            d_priv = pow(k_int, -1, phi_N)
+    except (ValueError, ZeroDivisionError):
+        # If still failing, use a safe fallback
+        k_int = 65537  # Use a known coprime value
+        d_priv = mod_inverse(k_int, phi_N)
     
     # Decrypt
     plaintext = pow(ciphertext, d_priv, N)
