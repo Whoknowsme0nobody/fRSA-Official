@@ -2,47 +2,6 @@ import random
 import math
 import hashlib
 
-def generate_large_prime(bits):
-    """Generate a large prime number with specified bit length"""
-    while True:
-        num = random.getrandbits(bits)
-        num |= (1 << bits - 1) | 1  # Set MSB and LSB to 1
-        if is_prime(num):
-            return num
-
-def is_prime(n, k=20):
-    """Miller-Rabin primality test"""
-    if n < 2:
-        return False
-    if n == 2 or n == 3:
-        return True
-    if n % 2 == 0:
-        return False
-    
-    # Write n-1 as 2^r * d
-    r = 0
-    d = n - 1
-    while d % 2 == 0:
-        d //= 2
-        r += 1
-    
-    # Perform k rounds of testing
-    for _ in range(k):
-        a = random.randrange(2, n - 1)
-        x = pow(a, d, n)
-        
-        if x == 1 or x == n - 1:
-            continue
-        
-        for _ in range(r - 1):
-            x = pow(x, 2, n)
-            if x == n - 1:
-                break
-        else:
-            return False
-    
-    return True
-
 def extended_gcd(a, b):
     """Extended Euclidean Algorithm"""
     if a == 0:
@@ -53,14 +12,52 @@ def extended_gcd(a, b):
     return gcd, x, y
 
 def mod_inverse(a, m):
-    """Modular multiplicative inverse"""
+    """Compute modular inverse of a modulo m"""
     gcd, x, _ = extended_gcd(a, m)
     if gcd != 1:
         raise ValueError("Modular inverse does not exist")
     return (x % m + m) % m
 
+def is_prime(n, k=10):
+    """Miller-Rabin primality test"""
+    if n < 2:
+        return False
+    if n == 2 or n == 3:
+        return True
+    if n % 2 == 0:
+        return False
+    
+    # Write n-1 as d * 2^r
+    r = 0
+    d = n - 1
+    while d % 2 == 0:
+        r += 1
+        d //= 2
+    
+    # Perform k rounds of testing
+    for _ in range(k):
+        a = random.randrange(2, n - 1)
+        x = pow(a, d, n)
+        if x == 1 or x == n - 1:
+            continue
+        for _ in range(r - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+def generate_prime(bits):
+    """Generate a random prime of specified bit length"""
+    while True:
+        n = random.getrandbits(bits)
+        n |= (1 << bits - 1) | 1  # Set MSB and LSB
+        if is_prime(n):
+            return n
+
 def polynomial_function(x, coeffs, mod):
-    """Evaluate polynomial function mod n"""
+    """Evaluate polynomial function modulo mod"""
     result = 0
     power = 1
     for coeff in coeffs:
@@ -69,72 +66,66 @@ def polynomial_function(x, coeffs, mod):
     return result
 
 def transcendental_function(x, mod):
-    """Approximate transcendental function using series expansion"""
-    # Use sin(x) approximation: sin(x) ≈ x - x³/6 + x⁵/120 - ...
+    """Approximate transcendental function using Taylor series"""
+    # Using sin(x) approximation: x - x^3/6 + x^5/120 - ...
     x = x % mod
     result = x
     term = x
-    
-    # Add a few terms of the series
-    for i in range(1, 6):
+    for i in range(1, 10):  # First 10 terms
         term = (term * x * x) % mod
         if i % 2 == 1:
-            # Approximate division by factorial
-            factorial_approx = pow(2 * i + 1, mod - 2, mod)  # Fermat's little theorem
-            result = (result - term * factorial_approx) % mod
-        else:
-            factorial_approx = pow(2 * i + 1, mod - 2, mod)
-            result = (result + term * factorial_approx) % mod
-    
-    return result
+            # Approximate factorial division
+            divisor = pow(2 * i + 1, mod - 2, mod)  # Fermat's little theorem
+            term = (term * divisor) % mod
+            if i % 4 == 1:
+                result = (result - term) % mod
+            else:
+                result = (result + term) % mod
+    return result % mod
 
-def generate_function_coefficients(security_level, function_type='polynomial'):
-    """Generate coefficients for the function"""
-    if function_type == 'polynomial':
-        degree = security_level // 32  # Adjust degree based on security level
-        return [random.randint(1, 2**32) for _ in range(degree + 1)]
-    else:
-        return [random.randint(1, 2**16) for _ in range(4)]  # Coefficients for transcendental
+def hash_to_number(data):
+    """Hash data to a number"""
+    return int.from_bytes(hashlib.sha256(str(data).encode()).digest(), 'big')
 
+# fRSA Implementation
 def fRSA_keygen(security_level=128, function_type='polynomial'):
     """Generate fRSA key pair"""
     # Generate two large primes
-    p = generate_large_prime(security_level // 2)
-    q = generate_large_prime(security_level // 2)
+    p = generate_prime(security_level // 2)
+    q = generate_prime(security_level // 2)
     n = p * q
-    phi_n = (p - 1) * (q - 1)
+    phi = (p - 1) * (q - 1)
     
-    # Choose e (commonly 65537)
+    # Choose public exponent
     e = 65537
-    while math.gcd(e, phi_n) != 1:
-        e = random.randint(3, phi_n - 1)
-        if e % 2 == 0:
-            e += 1
+    while math.gcd(e, phi) != 1:
+        e += 2
     
-    # Calculate d
-    d = mod_inverse(e, phi_n)
+    # Compute private exponent
+    d = mod_inverse(e, phi)
     
-    # Generate function coefficients
-    coeffs = generate_function_coefficients(security_level, function_type)
+    # Generate function parameters
+    if function_type == 'polynomial':
+        coeffs = [random.randint(1, n-1) for _ in range(5)]
+        func_params = {'type': 'polynomial', 'coeffs': coeffs}
+    else:
+        func_params = {'type': 'transcendental'}
     
     # Public key
     pub_key = {
         'n': n,
         'e': e,
-        'coeffs': coeffs,
-        'function_type': function_type,
+        'func_params': func_params,
         'security_level': security_level
     }
     
-    # Private key
+    # Private key  
     priv_key = {
         'n': n,
         'd': d,
         'p': p,
         'q': q,
-        'coeffs': coeffs,
-        'function_type': function_type,
-        'security_level': security_level
+        'func_params': func_params
     }
     
     return pub_key, priv_key
@@ -143,104 +134,134 @@ def fRSA_encrypt(message, pub_key):
     """Encrypt message using fRSA"""
     n = pub_key['n']
     e = pub_key['e']
-    coeffs = pub_key['coeffs']
-    function_type = pub_key['function_type']
+    func_params = pub_key['func_params']
     
-    # Apply function transformation
-    if function_type == 'polynomial':
-        transformed = polynomial_function(message, coeffs, n)
+    # Apply functional transformation
+    if func_params['type'] == 'polynomial':
+        transformed = polynomial_function(message, func_params['coeffs'], n)
     else:
         transformed = transcendental_function(message, n)
     
-    # Standard RSA encryption
+    # RSA encryption
     ciphertext = pow(transformed, e, n)
     
-    return ciphertext
+    return {
+        'ciphertext': ciphertext,
+        'func_params': func_params
+    }
 
-def fRSA_decrypt(ciphertext, priv_key):
-    """Decrypt ciphertext using fRSA"""
+def fRSA_decrypt(encrypted_data, priv_key):
+    """Decrypt message using fRSA"""
     n = priv_key['n']
     d = priv_key['d']
+    ciphertext = encrypted_data['ciphertext']
     
-    # Standard RSA decryption
-    decrypted = pow(ciphertext, d, n)
+    # RSA decryption
+    transformed = pow(ciphertext, d, n)
     
-    # For simplicity, return the decrypted value
-    # In a real implementation, you'd need to invert the function transformation
-    # This is a simplified version for benchmarking
-    return decrypted % (2**20)  # Limit to reasonable message size
+    # Reverse functional transformation (simplified)
+    # In practice, this would require solving the inverse function
+    # For demonstration, we'll use a simplified approach
+    if priv_key['func_params']['type'] == 'polynomial':
+        # Simplified inverse - just return the transformed value
+        # In real implementation, you'd solve the polynomial equation
+        message = transformed % 1000000  # Simplified recovery
+    else:
+        # Simplified inverse for transcendental
+        message = transformed % 1000000  # Simplified recovery
+    
+    return message
 
+# rRSA Implementation  
 def rRSA_keygen(security_level=128, function_type='polynomial'):
-    """Generate rRSA key pair (similar to fRSA but with different parameters)"""
-    # Generate parameters with different structure
-    p = generate_large_prime(security_level // 2 + 1)
-    q = generate_large_prime(security_level // 2 - 1)
-    n = p * q
-    phi_n = (p - 1) * (q - 1)
+    """Generate rRSA key pair"""
+    # Generate large prime
+    p = generate_prime(security_level)
     
-    # Choose different e
-    e = 3
-    while math.gcd(e, phi_n) != 1:
-        e = random.choice([3, 17, 257, 65537])
+    # Generate ring parameters
+    ring_size = random.randint(100, 1000)
     
-    d = mod_inverse(e, phi_n)
+    # Choose public exponent
+    e = 65537
+    while math.gcd(e, p-1) != 1:
+        e += 2
     
-    # Different coefficient generation strategy
-    coeffs = generate_function_coefficients(security_level, function_type)
+    # Compute private exponent
+    d = mod_inverse(e, p-1)
+    
+    # Generate function parameters
     if function_type == 'polynomial':
-        coeffs = [c * 2 + 1 for c in coeffs]  # Make coefficients odd
+        coeffs = [random.randint(1, p-1) for _ in range(3)]
+        func_params = {'type': 'polynomial', 'coeffs': coeffs}
+    else:
+        func_params = {'type': 'transcendental'}
     
+    # Public key
     pub_key = {
-        'n': n,
+        'p': p,
         'e': e,
-        'coeffs': coeffs,
-        'function_type': function_type,
+        'ring_size': ring_size,
+        'func_params': func_params,
         'security_level': security_level
     }
     
+    # Private key
     priv_key = {
-        'n': n,
-        'd': d,
         'p': p,
-        'q': q,
-        'coeffs': coeffs,
-        'function_type': function_type,
-        'security_level': security_level
+        'd': d,
+        'ring_size': ring_size,
+        'func_params': func_params
     }
     
     return pub_key, priv_key
 
 def rRSA_encrypt(message, pub_key):
     """Encrypt message using rRSA"""
-    n = pub_key['n']
+    p = pub_key['p']
     e = pub_key['e']
-    coeffs = pub_key['coeffs']
-    function_type = pub_key['function_type']
+    ring_size = pub_key['ring_size']
+    func_params = pub_key['func_params']
     
-    # Apply modified function transformation
-    if function_type == 'polynomial':
-        # Use modified polynomial evaluation
-        transformed = polynomial_function(message * 2 + 1, coeffs, n)
+    # Ring-based transformation
+    ring_element = message % ring_size
+    
+    # Apply functional transformation
+    if func_params['type'] == 'polynomial':
+        transformed = polynomial_function(ring_element, func_params['coeffs'], p)
     else:
-        # Use modified transcendental function
-        transformed = transcendental_function(message + coeffs[0], n)
+        transformed = transcendental_function(ring_element, p)
     
-    # RSA encryption with padding
-    padded = (transformed + random.randint(1, 1000)) % n
-    ciphertext = pow(padded, e, n)
+    # Ring RSA encryption
+    ciphertext = pow(transformed, e, p)
     
-    return ciphertext
+    return {
+        'ciphertext': ciphertext,
+        'ring_size': ring_size,
+        'func_params': func_params
+    }
 
-def rRSA_decrypt(ciphertext, priv_key):
-    """Decrypt ciphertext using rRSA"""
-    n = priv_key['n']
+def rRSA_decrypt(encrypted_data, priv_key):
+    """Decrypt message using rRSA"""
+    p = priv_key['p']
     d = priv_key['d']
+    ciphertext = encrypted_data['ciphertext']
+    ring_size = priv_key['ring_size']
     
-    # RSA decryption
-    decrypted = pow(ciphertext, d, n)
+    # Ring RSA decryption
+    transformed = pow(ciphertext, d, p)
     
-    # Simplified inverse transformation for benchmarking
-    return decrypted % (2**20)  # Limit to reasonable message size
+    # Reverse functional transformation (simplified)
+    if priv_key['func_params']['type'] == 'polynomial':
+        # Simplified inverse
+        ring_element = transformed % ring_size
+    else:
+        # Simplified inverse
+        ring_element = transformed % ring_size
+    
+    # Recover original message (simplified)
+    message = ring_element % 1000000  # Simplified recovery
+    
+    return message
 
 # Test functions
 def test_frsa():
@@ -249,13 +270,14 @@ def test_frsa():
     pub_key, priv_key = fRSA_keygen(security_level=128)
     
     message = 12345
-    ciphertext = fRSA_encrypt(message, pub_key)
-    decrypted = fRSA_decrypt(ciphertext, priv_key)
+    encrypted = fRSA_encrypt(message, pub_key)
+    decrypted = fRSA_decrypt(encrypted, priv_key)
     
     print(f"Original: {message}")
-    print(f"Encrypted: {ciphertext}")
     print(f"Decrypted: {decrypted}")
-    print(f"Match: {message == decrypted}")
+    print(f"Correct: {message == decrypted}")
+    
+    return message == decrypted
 
 def test_rrsa():
     """Test rRSA implementation"""
@@ -263,15 +285,21 @@ def test_rrsa():
     pub_key, priv_key = rRSA_keygen(security_level=128)
     
     message = 12345
-    ciphertext = rRSA_encrypt(message, pub_key)
-    decrypted = rRSA_decrypt(ciphertext, priv_key)
+    encrypted = rRSA_encrypt(message, pub_key)
+    decrypted = rRSA_decrypt(encrypted, priv_key)
     
     print(f"Original: {message}")
-    print(f"Encrypted: {ciphertext}")
     print(f"Decrypted: {decrypted}")
-    print(f"Match: {message == decrypted}")
+    print(f"Correct: {message == decrypted}")
+    
+    return message == decrypted
 
 if __name__ == "__main__":
-    test_frsa()
-    print()
-    test_rrsa()
+    print("Testing cryptographic implementations...")
+    frsa_works = test_frsa()
+    rrsa_works = test_rrsa()
+    
+    if frsa_works and rrsa_works:
+        print("All tests passed!")
+    else:
+        print("Some tests failed!")
