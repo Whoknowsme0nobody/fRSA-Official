@@ -113,4 +113,11 @@ Try to recover the original message without knowing the exact secret exponent K!
 
 ## 📝 License
 
-MIT License
+**Experimental/Academic Use Only – No Commercial Use**
+
+This software is provided for academic research, learning, and experimentation purposes only.  
+You may use, modify, and share this software for non-commercial and educational activities, provided you give appropriate credit.
+
+**Commercial use is strictly prohibited without prior written permission and a paid license from the copyright holder.**
+
+Contact [Your Name or Company] at [your email or website] for commercial licensing inquiries.
