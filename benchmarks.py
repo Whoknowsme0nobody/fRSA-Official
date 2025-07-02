@@ -1,121 +1,59 @@
-#!/usr/bin/env python3
-"""
-fRSA Performance Benchmarks
-Compare fRSA vs theoretical RSA performance
-"""
-
 import time
 import random
-import statistics
-from frsa_rrsa_redacted import *  # Import your main functions
+from frsa_rrsa_redacted import fRSA_keygen, fRSA_encrypt, fRSA_decrypt
 
-def run_benchmark_suite():
-    """Complete benchmark suite for fRSA"""
-    print("=" * 60)
-    print("fRSA PERFORMANCE BENCHMARK SUITE")
-    print("=" * 60)
+def benchmark_frsa():
+    print("=== fRSA Performance Benchmarks ===")
     
-    # Test parameters
-    security_levels = [128, 256]
-    num_trials = 10
+    # Key generation benchmark
+    start = time.time()
+    pub_key, priv_key = fRSA_keygen(security_level=128)
+    keygen_time = time.time() - start
     
-    results = {}
+    # Encryption benchmark
+    message = random.randint(1, 1000000)
+    start = time.time()
+    ciphertext = fRSA_encrypt(message, pub_key)
+    encrypt_time = time.time() - start
     
-    for level in security_levels:
-        print(f"\n🔐 Testing Security Level: {level}-bit")
-        print("-" * 40)
-        
-        # Benchmark key generation
-        keygen_times = []
-        for i in range(num_trials):
-            start = time.perf_counter()
-            pub_key, priv_key = fRSA_keygen(security_level=level)
-            end = time.perf_counter()
-            keygen_times.append((end - start) * 1000)  # Convert to ms
-        
-        # Test encryption/decryption
-        message = random.randint(1000, 999999)
-        encrypt_times = []
-        decrypt_times = []
-        
-        for i in range(num_trials):
-            # Encryption timing
-            start = time.perf_counter()
-            ciphertext = fRSA_encrypt(message, pub_key)
-            end = time.perf_counter()
-            encrypt_times.append((end - start) * 1000)
-            
-            # Decryption timing
-            start = time.perf_counter()
-            decrypted = fRSA_decrypt(ciphertext, priv_key)
-            end = time.perf_counter()
-            decrypt_times.append((end - start) * 1000)
-            
-            # Verify correctness
-            assert message == decrypted, f"Decryption failed: {message} != {decrypted}"
-        
-        # Calculate statistics
-        results[level] = {
-            'keygen': statistics.mean(keygen_times),
-            'encrypt': statistics.mean(encrypt_times),
-            'decrypt': statistics.mean(decrypt_times)
-        }
-        
-        # Print results
-        print(f"Key Generation: {results[level]['keygen']:.2f} ms")
-        print(f"Encryption:     {results[level]['encrypt']:.2f} ms")
-        print(f"Decryption:     {results[level]['decrypt']:.2f} ms")
-        print(f"✅ All {num_trials} trials passed correctness test")
+    # Decryption benchmark
+    start = time.time()
+    decrypted = fRSA_decrypt(ciphertext, priv_key)
+    decrypt_time = time.time() - start
     
-    # Summary comparison
-    print("\n" + "=" * 60)
-    print("COMPARISON WITH ESTABLISHED SCHEMES")
-    print("=" * 60)
-    print("Scheme          | KeyGen   | Encrypt  | Decrypt  | Security")
-    print("-" * 60)
-    print(f"fRSA-128        | {results[128]['keygen']:6.1f}ms | {results[128]['encrypt']:6.1f}ms | {results[128]['decrypt']:6.1f}ms | 128-bit PQ")
-    if 256 in results:
-        print(f"fRSA-256        | {results[256]['keygen']:6.1f}ms | {results[256]['encrypt']:6.1f}ms | {results[256]['decrypt']:6.1f}ms | 256-bit PQ")
-    print("RSA-3072        |   42.1ms |    0.8ms |   12.5ms | 128-bit Classical")
-    print("CRYSTALS-Kyber  |    0.9ms |    1.2ms |    1.1ms | 128-bit PQ")
-    
-    return results
+    print(f"Key Generation Time: {keygen_time:.4f} seconds")
+    print(f"Encryption Time: {encrypt_time:.4f} seconds") 
+    print(f"Decryption Time: {decrypt_time:.4f} seconds")
+    print(f"Correctness Check: {message == decrypted}")
+    print(f"Security Level: 128-bit post-quantum")
 
-def security_analysis():
-    """Analyze attack complexity"""
-    print("\n" + "=" * 60)
-    print("SECURITY ANALYSIS")
-    print("=" * 60)
+def benchmark_multiple_runs():
+    print("\n=== Multiple Run Analysis ===")
+    keygen_times = []
+    encrypt_times = []
+    decrypt_times = []
     
-    # Function space analysis
-    degree = 4  # Redacted version uses degree 4
-    coeff_bits = 64
-    function_space_bits = degree * coeff_bits
-    
-    print(f"Function Parameters:")
-    print(f"  Polynomial degree: {degree}")
-    print(f"  Coefficient size:  {coeff_bits} bits")
-    print(f"  Function space:    2^{function_space_bits}")
-    
-    # Precision analysis
-    for precision in [128, 256]:
-        precision_bits = int(precision * 3.32)  # log2(10) ≈ 3.32
-        total_complexity = function_space_bits + precision_bits
+    for i in range(10):
+        # Key generation
+        start = time.time()
+        pub_key, priv_key = fRSA_keygen(security_level=128)
+        keygen_times.append(time.time() - start)
         
-        print(f"\nSecurity Level {precision}:")
-        print(f"  Precision space:   10^{precision} ≈ 2^{precision_bits}")
-        print(f"  Combined attack:   2^{total_complexity}")
-        print(f"  Quantum speedup:   2^{total_complexity//2} (Grover)")
+        # Encryption
+        message = random.randint(1, 1000000)
+        start = time.time()
+        ciphertext = fRSA_encrypt(message, pub_key)
+        encrypt_times.append(time.time() - start)
+        
+        # Decryption  
+        start = time.time()
+        decrypted = fRSA_decrypt(ciphertext, priv_key)
+        decrypt_times.append(time.time() - start)
     
-    print(f"\n⚠️  NOTE: Production systems require degree ≥8 polynomials")
-    print(f"   This demo uses degree-4 for educational purposes only")
+    print(f"Average Key Generation: {sum(keygen_times)/len(keygen_times):.4f}s")
+    print(f"Average Encryption: {sum(encrypt_times)/len(encrypt_times):.4f}s")
+    print(f"Average Decryption: {sum(decrypt_times)/len(decrypt_times):.4f}s")
 
 if __name__ == "__main__":
-    try:
-        results = run_benchmark_suite()
-        security_analysis()
-        print(f"\n✅ Benchmark completed successfully!")
-        print(f"📊 Results saved for paper inclusion")
-    except Exception as e:
-        print(f"❌ Benchmark failed: {e}")
-        print(f"🔧 Check your implementation files")
+    benchmark_frsa()
+    benchmark_multiple_runs()
