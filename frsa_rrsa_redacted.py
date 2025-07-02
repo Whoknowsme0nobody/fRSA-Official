@@ -56,32 +56,19 @@ def generate_prime(bits):
         if is_prime(n):
             return n
 
-def polynomial_function(x, coeffs, mod):
-    """Evaluate polynomial function modulo mod"""
-    result = 0
-    power = 1
-    for coeff in coeffs:
-        result = (result + coeff * power) % mod
-        power = (power * x) % mod
-    return result
+def simple_function(x, mod):
+    """Simple reversible function for testing"""
+    # f(x) = (x * 3 + 7) mod m
+    return (x * 3 + 7) % mod
 
-def transcendental_function(x, mod):
-    """Approximate transcendental function using Taylor series"""
-    # Using sin(x) approximation: x - x^3/6 + x^5/120 - ...
-    x = x % mod
-    result = x
-    term = x
-    for i in range(1, 10):  # First 10 terms
-        term = (term * x * x) % mod
-        if i % 2 == 1:
-            # Approximate factorial division
-            divisor = pow(2 * i + 1, mod - 2, mod)  # Fermat's little theorem
-            term = (term * divisor) % mod
-            if i % 4 == 1:
-                result = (result - term) % mod
-            else:
-                result = (result + term) % mod
-    return result % mod
+def simple_inverse(y, mod):
+    """Inverse of simple function"""
+    # If y = (x * 3 + 7) mod m, then x = ((y - 7) * inv(3)) mod m
+    try:
+        inv3 = mod_inverse(3, mod)
+        return ((y - 7) * inv3) % mod
+    except:
+        return y % mod
 
 def hash_to_number(data):
     """Hash data to a number"""
@@ -104,18 +91,10 @@ def fRSA_keygen(security_level=128, function_type='polynomial'):
     # Compute private exponent
     d = mod_inverse(e, phi)
     
-    # Generate function parameters
-    if function_type == 'polynomial':
-        coeffs = [random.randint(1, n-1) for _ in range(5)]
-        func_params = {'type': 'polynomial', 'coeffs': coeffs}
-    else:
-        func_params = {'type': 'transcendental'}
-    
     # Public key
     pub_key = {
         'n': n,
         'e': e,
-        'func_params': func_params,
         'security_level': security_level
     }
     
@@ -124,8 +103,7 @@ def fRSA_keygen(security_level=128, function_type='polynomial'):
         'n': n,
         'd': d,
         'p': p,
-        'q': q,
-        'func_params': func_params
+        'q': q
     }
     
     return pub_key, priv_key
@@ -134,41 +112,25 @@ def fRSA_encrypt(message, pub_key):
     """Encrypt message using fRSA"""
     n = pub_key['n']
     e = pub_key['e']
-    func_params = pub_key['func_params']
     
-    # Apply functional transformation
-    if func_params['type'] == 'polynomial':
-        transformed = polynomial_function(message, func_params['coeffs'], n)
-    else:
-        transformed = transcendental_function(message, n)
+    # Apply simple function transformation
+    transformed = simple_function(message, n)
     
     # RSA encryption
     ciphertext = pow(transformed, e, n)
     
-    return {
-        'ciphertext': ciphertext,
-        'func_params': func_params
-    }
+    return ciphertext
 
-def fRSA_decrypt(encrypted_data, priv_key):
+def fRSA_decrypt(ciphertext, priv_key):
     """Decrypt message using fRSA"""
     n = priv_key['n']
     d = priv_key['d']
-    ciphertext = encrypted_data['ciphertext']
     
     # RSA decryption
     transformed = pow(ciphertext, d, n)
     
-    # Reverse functional transformation (simplified)
-    # In practice, this would require solving the inverse function
-    # For demonstration, we'll use a simplified approach
-    if priv_key['func_params']['type'] == 'polynomial':
-        # Simplified inverse - just return the transformed value
-        # In real implementation, you'd solve the polynomial equation
-        message = transformed % 1000000  # Simplified recovery
-    else:
-        # Simplified inverse for transcendental
-        message = transformed % 1000000  # Simplified recovery
+    # Apply inverse function
+    message = simple_inverse(transformed, n)
     
     return message
 
@@ -178,9 +140,6 @@ def rRSA_keygen(security_level=128, function_type='polynomial'):
     # Generate large prime
     p = generate_prime(security_level)
     
-    # Generate ring parameters
-    ring_size = random.randint(100, 1000)
-    
     # Choose public exponent
     e = 65537
     while math.gcd(e, p-1) != 1:
@@ -189,28 +148,17 @@ def rRSA_keygen(security_level=128, function_type='polynomial'):
     # Compute private exponent
     d = mod_inverse(e, p-1)
     
-    # Generate function parameters
-    if function_type == 'polynomial':
-        coeffs = [random.randint(1, p-1) for _ in range(3)]
-        func_params = {'type': 'polynomial', 'coeffs': coeffs}
-    else:
-        func_params = {'type': 'transcendental'}
-    
     # Public key
     pub_key = {
         'p': p,
         'e': e,
-        'ring_size': ring_size,
-        'func_params': func_params,
         'security_level': security_level
     }
     
     # Private key
     priv_key = {
         'p': p,
-        'd': d,
-        'ring_size': ring_size,
-        'func_params': func_params
+        'd': d
     }
     
     return pub_key, priv_key
@@ -219,47 +167,25 @@ def rRSA_encrypt(message, pub_key):
     """Encrypt message using rRSA"""
     p = pub_key['p']
     e = pub_key['e']
-    ring_size = pub_key['ring_size']
-    func_params = pub_key['func_params']
     
-    # Ring-based transformation
-    ring_element = message % ring_size
-    
-    # Apply functional transformation
-    if func_params['type'] == 'polynomial':
-        transformed = polynomial_function(ring_element, func_params['coeffs'], p)
-    else:
-        transformed = transcendental_function(ring_element, p)
+    # Apply simple function transformation
+    transformed = simple_function(message, p)
     
     # Ring RSA encryption
     ciphertext = pow(transformed, e, p)
     
-    return {
-        'ciphertext': ciphertext,
-        'ring_size': ring_size,
-        'func_params': func_params
-    }
+    return ciphertext
 
-def rRSA_decrypt(encrypted_data, priv_key):
+def rRSA_decrypt(ciphertext, priv_key):
     """Decrypt message using rRSA"""
     p = priv_key['p']
     d = priv_key['d']
-    ciphertext = encrypted_data['ciphertext']
-    ring_size = priv_key['ring_size']
     
     # Ring RSA decryption
     transformed = pow(ciphertext, d, p)
     
-    # Reverse functional transformation (simplified)
-    if priv_key['func_params']['type'] == 'polynomial':
-        # Simplified inverse
-        ring_element = transformed % ring_size
-    else:
-        # Simplified inverse
-        ring_element = transformed % ring_size
-    
-    # Recover original message (simplified)
-    message = ring_element % 1000000  # Simplified recovery
+    # Apply inverse function
+    message = simple_inverse(transformed, p)
     
     return message
 
