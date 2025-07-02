@@ -297,7 +297,7 @@ def comprehensive_summary(frsa_single, rrsa_single, frsa_multi, rrsa_multi):
     print("           COMPREHENSIVE PERFORMANCE SUMMARY")
     print("="*60)
     
-    print(f"\n🚀 SINGLE RUN PERFORMANCE")
+    print(f"\nSINGLE RUN PERFORMANCE")
     print(f"┌─────────────────────────────────────────────────────────┐")
     print(f"│                    fRSA      │      rRSA      │ Winner │")
     print(f"├─────────────────────────────────────────────────────────┤")
@@ -306,7 +306,7 @@ def comprehensive_summary(frsa_single, rrsa_single, frsa_multi, rrsa_multi):
     print(f"│ Decryption        {frsa_single['decrypt']:.4f}s    │    {rrsa_single['decrypt']:.4f}s    │   {'fRSA' if frsa_single['decrypt'] < rrsa_single['decrypt'] else 'rRSA'}   │")
     print(f"└─────────────────────────────────────────────────────────┘")
     
-    print(f"\n📊 MULTI-RUN AVERAGES")
+    print(f"\nMULTI-RUN AVERAGES")
     print(f"┌─────────────────────────────────────────────────────────┐")
     print(f"│                    fRSA      │      rRSA      │ Winner │")
     print(f"├─────────────────────────────────────────────────────────┤")
@@ -340,13 +340,13 @@ def comprehensive_summary(frsa_single, rrsa_single, frsa_multi, rrsa_multi):
     
     overall_winner = 'fRSA' if frsa_wins > rrsa_wins else 'rRSA'
     
-    print(f"\n🏆 OVERALL PERFORMANCE WINNER: {overall_winner}")
+    print(f"\nOVERALL PERFORMANCE WINNER: {overall_winner}")
     print(f"   fRSA wins: {frsa_wins}/7 categories")
     print(f"   rRSA wins: {rrsa_wins}/7 categories")
 
 def main():
     """Main benchmark execution"""
-    print("🔥 ULTIMATE fRSA vs rRSA BENCHMARK SUITE 🔥")
+    print("ULTIMATE fRSA vs rRSA BENCHMARK SUITE")
     print("="*60)
     
     try:
@@ -367,12 +367,12 @@ def main():
         # Comprehensive summary
         comprehensive_summary(frsa_single, rrsa_single, frsa_multi, rrsa_multi)
         
-        print(f"\n🎯 BENCHMARK COMPLETE!")
+        print(f"\nBENCHMARK COMPLETE!")
         print(f"   All tests executed successfully")
-        print(f"   Ready for cryptographic deployment! 🚀")
+        print(f"   Ready for cryptographic deployment!")
         
     except Exception as e:
-        print(f"\n❌ BENCHMARK ERROR: {e}")
+        print(f"\nBENCHMARK ERROR: {e}")
         print(f"   Check your frsa_rrsa_redacted.py implementation")
 
 if __name__ == "__main__":
