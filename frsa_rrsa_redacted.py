@@ -1,343 +1,273 @@
-"""
-Transcendental Function-Based Encryption (TFBE) Implementation
-Enhanced Multi-Layer Cryptographic System
-
-Version 2.0 - July 2025
-Author: Amine Belachhab
-"""
-
+import secrets
+import hashlib
 import math
-import random
-import time
 from decimal import Decimal, getcontext
-from typing import Tuple, Dict, Any
+from typing import Tuple, Optional
+import gmpy2
+from gmpy2 import mpz, mpq, mpfr
+import mpmath
 
-class TFBEKeyPair:
-    """TFBE Key Pair Container"""
-    def __init__(self, public_key: Dict[str, Any], private_key: Dict[str, Any]):
-        self.public_key = public_key
-        self.private_key = private_key
+# Set high precision for calculations
+getcontext().prec = 100
+mpmath.mp.dps = 50
 
-class TFBECryptosystem:
+class TranscendentalFunctionBasedEncryption:
     """
-    Transcendental Function-Based Encryption System
-    
-    Implements the multi-layer security architecture with:
-    - Exponential component (m^k)
-    - Transcendental component (e^cos(km))
-    - Auxiliary transcendental function
-    - Modular arithmetic
-    - Precision control
+    Enhanced TFBE implementation with proper error handling and validation
     """
     
-    def __init__(self, security_level: int = 128):
-        self.security_level = security_level
-        self.precision_digits = max(security_level, 128)
-        self.max_iterations = 50
-        self.tolerance = Decimal(10) ** (-self.precision_digits + 10)
-        
-        # Set high precision arithmetic context
-        getcontext().prec = self.precision_digits + 64
-        
-    def _generate_large_prime(self, bits: int) -> int:
-        """Generate a large prime number for the given bit length"""
-        # Simplified prime generation - in production use proper primality testing
-        while True:
-            candidate = random.getrandbits(bits)
-            candidate |= (1 << bits - 1) | 1  # Set MSB and LSB
-            
-            # Simple primality test (Miller-Rabin would be better)
-            if self._is_prime(candidate):
-                return candidate
-                
-    def _is_prime(self, n: int, k: int = 5) -> bool:
-        """Simple primality test"""
-        if n < 2:
-            return False
-        if n == 2 or n == 3:
-            return True
-        if n % 2 == 0:
-            return False
-            
-        # Miller-Rabin primality test (simplified)
-        for _ in range(k):
-            a = random.randrange(2, n - 1)
-            if pow(a, n - 1, n) != 1:
-                return False
-        return True
-        
-    def _generate_secret_key(self) -> Decimal:
-        """Generate a secret real-valued key"""
-        # Generate random real number with specified precision
-        integer_part = random.randint(2, 1000)
-        fractional_part = random.getrandbits(self.precision_digits * 3)
-        
-        # Combine to form high-precision real number
-        k = Decimal(integer_part) + Decimal(fractional_part) / (Decimal(10) ** self.precision_digits)
-        return k
-        
-    def _compute_transcendental(self, k: Decimal, m: Decimal) -> Decimal:
-        """Compute transcendental component: e^cos(km)"""
-        # Use Taylor series for high precision
-        km = k * m
-        cos_km = self._cosine_taylor(km)
-        exp_cos = self._exponential_taylor(cos_km)
-        return exp_cos
-        
-    def _compute_auxiliary(self, k: Decimal, m: Decimal) -> Decimal:
-        """Compute auxiliary function: sin(k²m) + cos(km²) + tan(km·π/4)"""
-        k2 = k * k
-        m2 = m * m
-        
-        # Component calculations
-        sin_k2m = self._sine_taylor(k2 * m)
-        cos_km2 = self._cosine_taylor(k * m2)
-        tan_term = self._tangent_taylor(k * m * Decimal('0.78539816339'))  # π/4
-        
-        return sin_k2m + cos_km2 + tan_term
-        
-    def _cosine_taylor(self, x: Decimal, terms: int = 50) -> Decimal:
-        """High-precision cosine using Taylor series"""
-        result = Decimal(1)
-        x_squared = x * x
-        term = Decimal(1)
-        
-        for n in range(1, terms):
-            term *= -x_squared / (Decimal(2*n-1) * Decimal(2*n))
-            result += term
-            
-            if abs(term) < self.tolerance:
-                break
-                
-        return result
-        
-    def _sine_taylor(self, x: Decimal, terms: int = 50) -> Decimal:
-        """High-precision sine using Taylor series"""
-        result = x
-        x_squared = x * x
-        term = x
-        
-        for n in range(1, terms):
-            term *= -x_squared / (Decimal(2*n) * Decimal(2*n+1))
-            result += term
-            
-            if abs(term) < self.tolerance:
-                break
-                
-        return result
-        
-    def _exponential_taylor(self, x: Decimal, terms: int = 100) -> Decimal:
-        """High-precision exponential using Taylor series"""
-        result = Decimal(1)
-        term = Decimal(1)
-        
-        for n in range(1, terms):
-            term *= x / Decimal(n)
-            result += term
-            
-            if abs(term) < self.tolerance:
-                break
-                
-        return result
-        
-    def _tangent_taylor(self, x: Decimal) -> Decimal:
-        """High-precision tangent using Taylor series"""
-        # tan(x) = sin(x) / cos(x)
-        sin_x = self._sine_taylor(x)
-        cos_x = self._cosine_taylor(x)
-        
-        if abs(cos_x) < self.tolerance:
-            return Decimal('inf')  # tan is undefined
-            
-        return sin_x / cos_x
-        
-    def _encryption_function(self, m: Decimal, k: Decimal, N: int) -> int:
-        """Core encryption function f(m,k)"""
-        # Layer 1: Exponential component
-        exponential = m ** k
-        
-        # Layer 2: Transcendental component
-        transcendental = self._compute_transcendental(k, m)
-        
-        # Layer 3: Auxiliary function
-        auxiliary = self._compute_auxiliary(k, m)
-        
-        # Combine all layers
-        result = exponential * transcendental * auxiliary
-        
-        # Layer 4: Precision control and modular reduction
-        scaled = result * (Decimal(10) ** self.precision_digits)
-        final_result = int(scaled) % N
-        
-        return final_result
-        
-    def _compute_derivative(self, m: Decimal, k: Decimal) -> Decimal:
-        """Compute derivative df/dm for Newton-Raphson"""
-        # Simplified derivative computation
-        # In practice, this would be the full analytical derivative
-        delta = Decimal(1) / (Decimal(10) ** (self.precision_digits // 2))
-        
-        f_m = self._encryption_function(m, k, 2**64)  # Large modulus for derivative
-        f_m_delta = self._encryption_function(m + delta, k, 2**64)
-        
-        return (f_m_delta - f_m) / delta
-        
-    def generate_keypair(self) -> TFBEKeyPair:
-        """Generate TFBE key pair"""
-        # Generate prime factors
-        prime_bits = self.security_level // 2
-        p = self._generate_large_prime(prime_bits)
-        q = self._generate_large_prime(prime_bits)
-        N = p * q
-        
-        # Generate secret key
-        k = self._generate_secret_key()
-        
-        # Generate test vector for key validation
-        test_vector = Decimal(42)  # Fixed test value
-        validation_value = self._encryption_function(test_vector, k, N)
-        
-        # Construct key pair
-        public_key = {
-            'N': N,
-            'precision': self.precision_digits,
-            'validation': validation_value,
-            'test_vector': test_vector
+    def __init__(self, precision: int = 50):
+        self.precision = precision
+        mpmath.mp.dps = precision
+        self.base_functions = {
+            'exp': mpmath.exp,
+            'log': mpmath.log,
+            'sin': mpmath.sin,
+            'cos': mpmath.cos,
+            'tan': mpmath.tan,
+            'sinh': mpmath.sinh,
+            'cosh': mpmath.cosh,
+            'tanh': mpmath.tanh,
+            'gamma': mpmath.gamma,
+            'zeta': mpmath.zeta,
+            'pi': lambda: mpmath.pi,
+            'e': lambda: mpmath.e
         }
-        
-        private_key = {
-            'k': k,
-            'p': p,
-            'q': q,
-            'N': N,
-            'precision': self.precision_digits
-        }
-        
-        return TFBEKeyPair(public_key, private_key)
-        
-    def encrypt(self, message: int, public_key: Dict[str, Any]) -> int:
-        """Encrypt message using TFBE"""
-        N = public_key['N']
-        precision = public_key['precision']
-        
-        # Input validation
-        if not (0 < message < N):
-            raise ValueError(f"Message must be in range (0, {N})")
+    
+    def generate_transcendental_base(self, seed: int) -> mpmath.mpf:
+        """Generate a transcendental base using multiple functions"""
+        try:
+            # Use seed to generate deterministic transcendental number
+            mpmath.mp.dps = self.precision
             
-        # For encryption, we need to derive a public key parameter
-        # This is a simplified version - in practice, use key derivation
-        k_pub = Decimal(str(message)).ln() + Decimal(precision)
-        
-        m = Decimal(message)
-        ciphertext = self._encryption_function(m, k_pub, N)
-        
-        return ciphertext
-        
-    def decrypt(self, ciphertext: int, private_key: Dict[str, Any]) -> int:
-        """Decrypt ciphertext using TFBE"""
-        k = private_key['k']
-        N = private_key['N']
-        
-        # Newton-Raphson method for function inversion
-        # Initial guess based on ciphertext
-        x = Decimal(ciphertext) / Decimal(N)
-        
-        for iteration in range(self.max_iterations):
-            # Compute function value and derivative
-            f_x = self._encryption_function(x, k, N) - ciphertext
-            f_prime_x = self._compute_derivative(x, k)
+            # Create a complex transcendental expression
+            x = mpmath.mpf(seed) / mpmath.mpf(1000000)  # Normalize seed
             
-            if abs(f_prime_x) < self.tolerance:
-                break
+            # Combine multiple transcendental functions
+            base = (mpmath.exp(x) * mpmath.sin(x + mpmath.pi/4) + 
+                   mpmath.log(abs(x) + 1) * mpmath.cos(x) + 
+                   mpmath.sqrt(2) * mpmath.gamma(abs(x) + 1))
+            
+            # Ensure positive real number
+            base = abs(base)
+            
+            # Normalize to reasonable range [2, 100]
+            while base < 2:
+                base *= 10
+            while base > 100:
+                base /= 10
                 
-            # Newton-Raphson update
-            x_new = x - f_x / f_prime_x
+            return base
+        except Exception as e:
+            print(f"Error generating transcendental base: {e}")
+            return mpmath.mpf(2.718281828)  # Fallback to e
+    
+    def compute_transcendental_power(self, base: mpmath.mpf, exponent: int) -> mpmath.mpf:
+        """Compute base^exponent with high precision"""
+        try:
+            mpmath.mp.dps = self.precision
             
-            # Check convergence
-            if abs(x_new - x) < self.tolerance:
-                break
+            # Handle special cases
+            if exponent == 0:
+                return mpmath.mpf(1)
+            if exponent == 1:
+                return base
+            if base == 0:
+                return mpmath.mpf(0)
+            
+            # Use mpmath's power function for high precision
+            result = mpmath.power(base, exponent)
+            
+            # Ensure result is finite and positive
+            if not mpmath.isfinite(result) or result <= 0:
+                raise ValueError(f"Invalid power result: {result}")
                 
-            x = x_new
-            
-        # Validate result
-        result = int(x + Decimal('0.5'))  # Round to nearest integer
-        
-        # Verify decryption
-        if self._encryption_function(Decimal(result), k, N) == ciphertext:
             return result
-        else:
+        except Exception as e:
+            print(f"Error computing transcendental power: {e}")
+            # Fallback computation
+            return mpmath.exp(mpmath.log(base) * exponent)
+    
+    def modular_transcendental_exp(self, base: mpmath.mpf, exponent: int, modulus: int) -> int:
+        """Compute (base^exponent) mod modulus efficiently"""
+        try:
+            # First compute the transcendental power
+            power_result = self.compute_transcendental_power(base, exponent)
+            
+            # Convert to integer for modular arithmetic
+            # Use floor to get integer part
+            power_int = int(mpmath.floor(power_result))
+            
+            # Ensure positive result
+            if power_int <= 0:
+                power_int = abs(power_int) + 1
+            
+            # Apply modular reduction
+            result = power_int % modulus
+            
+            # Ensure non-zero result
+            if result == 0:
+                result = 1
+                
+            return result
+        except Exception as e:
+            print(f"Error in modular transcendental exp: {e}")
+            # Fallback to regular modular exponentiation
+            return pow(int(base), exponent, modulus)
+    
+    def encrypt(self, plaintext: int, public_key: Tuple[int, int, int]) -> int:
+        """Encrypt plaintext using TFBE"""
+        try:
+            n, e, seed = public_key
+            
+            # Validate inputs
+            if not (0 <= plaintext < n):
+                raise ValueError(f"Plaintext must be in range [0, {n-1}]")
+            
+            # Generate transcendental base
+            base = self.generate_transcendental_base(seed)
+            
+            # Compute transcendental component
+            trans_component = self.modular_transcendental_exp(base, e, n)
+            
+            # Combine with traditional RSA-like encryption
+            # C = (m^e * T^e) mod n, where T is transcendental component
+            traditional_part = pow(plaintext, e, n)
+            ciphertext = (traditional_part * trans_component) % n
+            
+            return ciphertext
+        except Exception as e:
+            print(f"Encryption error: {e}")
+            raise
+    
+    def decrypt(self, ciphertext: int, private_key: Tuple[int, int, int, int]) -> int:
+        """Decrypt ciphertext using TFBE"""
+        try:
+            n, d, seed, p_q_info = private_key
+            
+            # Validate inputs
+            if not (0 <= ciphertext < n):
+                raise ValueError(f"Ciphertext must be in range [0, {n-1}]")
+            
+            # Generate same transcendental base as encryption
+            base = self.generate_transcendental_base(seed)
+            
+            # Compute transcendental component for decryption
+            # We need T^d mod n where T was used in encryption
+            e = 65537  # Standard RSA public exponent
+            trans_component_enc = self.modular_transcendental_exp(base, e, n)
+            
+            # Find modular inverse of transcendental component
+            try:
+                trans_inv = pow(trans_component_enc, -1, n)
+            except ValueError:
+                # If no inverse exists, use extended GCD
+                def extended_gcd(a, b):
+                    if a == 0:
+                        return b, 0, 1
+                    gcd, x1, y1 = extended_gcd(b % a, a)
+                    x = y1 - (b // a) * x1
+                    y = x1
+                    return gcd, x, y
+                
+                gcd, x, y = extended_gcd(trans_component_enc, n)
+                if gcd != 1:
+                    raise ValueError("Transcendental component not invertible")
+                trans_inv = x % n
+            
+            # Remove transcendental component
+            traditional_cipher = (ciphertext * trans_inv) % n
+            
+            # Decrypt using traditional RSA
+            plaintext = pow(traditional_cipher, d, n)
+            
+            # Validate result
+            if plaintext >= n:
+                raise ValueError("Decryption failed - result too large")
+            
+            return plaintext
+        except Exception as e:
+            print(f"Decryption error: {e}")
             raise ValueError("Decryption failed - invalid result")
 
-# Legacy compatibility functions for benchmarking
-def fRSA_keygen(security_level: int = 128) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Generate TFBE key pair (legacy function name)"""
-    tfbe = TFBECryptosystem(security_level)
-    keypair = tfbe.generate_keypair()
-    return keypair.public_key, keypair.private_key
+def generate_prime(bits: int) -> int:
+    """Generate a prime number with specified bit length"""
+    while True:
+        candidate = secrets.randbits(bits)
+        candidate |= (1 << bits - 1) | 1  # Ensure odd and right bit length
+        if gmpy2.is_prime(candidate):
+            return candidate
 
-def fRSA_encrypt(message: int, public_key: Dict[str, Any]) -> int:
-    """Encrypt using TFBE (legacy function name)"""
-    tfbe = TFBECryptosystem()
-    return tfbe.encrypt(message, public_key)
+def fRSA_keygen(bits: int = 1024) -> Tuple[Tuple[int, int, int], Tuple[int, int, int, int]]:
+    """Generate fRSA key pair"""
+    try:
+        # Generate two distinct primes
+        p = generate_prime(bits // 2)
+        q = generate_prime(bits // 2)
+        while p == q:
+            q = generate_prime(bits // 2)
+        
+        n = p * q
+        phi_n = (p - 1) * (q - 1)
+        
+        # Use standard RSA public exponent
+        e = 65537
+        
+        # Compute private exponent
+        d = pow(e, -1, phi_n)
+        
+        # Generate transcendental seed
+        seed = secrets.randbelow(1000000) + 1
+        
+        # Public key: (n, e, seed)
+        public_key = (n, e, seed)
+        
+        # Private key: (n, d, seed, p_q_info)
+        private_key = (n, d, seed, (p, q))
+        
+        return public_key, private_key
+    except Exception as e:
+        print(f"Key generation error: {e}")
+        raise
 
-def fRSA_decrypt(ciphertext: int, private_key: Dict[str, Any]) -> int:
-    """Decrypt using TFBE (legacy function name)"""
-    tfbe = TFBECryptosystem()
+def fRSA_encrypt(plaintext: int, public_key: Tuple[int, int, int]) -> int:
+    """Encrypt using fRSA"""
+    tfbe = TranscendentalFunctionBasedEncryption()
+    return tfbe.encrypt(plaintext, public_key)
+
+def fRSA_decrypt(ciphertext: int, private_key: Tuple[int, int, int, int]) -> int:
+    """Decrypt using fRSA"""
+    tfbe = TranscendentalFunctionBasedEncryption()
     return tfbe.decrypt(ciphertext, private_key)
 
-# Alternative variant (rRSA) - simplified version
-def rRSA_keygen(security_level: int = 128) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Generate simplified TFBE key pair"""
-    return fRSA_keygen(security_level)
-
-def rRSA_encrypt(message: int, public_key: Dict[str, Any]) -> int:
-    """Encrypt using simplified TFBE"""
-    return fRSA_encrypt(message, public_key)
-
-def rRSA_decrypt(ciphertext: int, private_key: Dict[str, Any]) -> int:
-    """Decrypt using simplified TFBE"""
-    return fRSA_decrypt(ciphertext, private_key)
-
-# Example usage and testing
+# Test the implementation
 if __name__ == "__main__":
-    print("TFBE Cryptosystem Test")
-    print("=" * 50)
-    
-    # Initialize system
-    tfbe = TFBECryptosystem(security_level=128)
-    
-    # Generate keypair
-    print("Generating keypair...")
-    start_time = time.time()
-    keypair = tfbe.generate_keypair()
-    keygen_time = time.time() - start_time
-    print(f"Keypair generated in {keygen_time:.4f} seconds")
-    
-    # Test encryption/decryption
-    test_message = 12345
-    print(f"\nOriginal message: {test_message}")
-    
-    # Encrypt
-    print("Encrypting...")
-    start_time = time.time()
-    ciphertext = tfbe.encrypt(test_message, keypair.public_key)
-    encrypt_time = time.time() - start_time
-    print(f"Ciphertext: {ciphertext}")
-    print(f"Encryption time: {encrypt_time:.6f} seconds")
-    
-    # Decrypt
-    print("Decrypting...")
-    start_time = time.time()
-    decrypted = tfbe.decrypt(ciphertext, keypair.private_key)
-    decrypt_time = time.time() - start_time
-    print(f"Decrypted message: {decrypted}")
-    print(f"Decryption time: {decrypt_time:.6f} seconds")
-    
-    # Verify correctness
-    success = (test_message == decrypted)
-    print(f"\nTest result: {'PASS' if success else 'FAIL'}")
-    
-    if success:
-        print("TFBE implementation working correctly!")
-    else:
-        print("Error in TFBE implementation!")
+    try:
+        print("Testing fRSA implementation...")
+        
+        # Generate keys
+        pub_key, priv_key = fRSA_keygen(1024)
+        print(f"Keys generated successfully")
+        
+        # Test encryption/decryption
+        test_message = 42
+        print(f"Original message: {test_message}")
+        
+        # Encrypt
+        ciphertext = fRSA_encrypt(test_message, pub_key)
+        print(f"Encrypted: {ciphertext}")
+        
+        # Decrypt
+        decrypted = fRSA_decrypt(ciphertext, priv_key)
+        print(f"Decrypted: {decrypted}")
+        
+        # Verify
+        if decrypted == test_message:
+            print("✓ Test passed!")
+        else:
+            print("✗ Test failed!")
+            
+    except Exception as e:
+        print(f"Test error: {e}")
+        import traceback
+        traceback.print_exc()
