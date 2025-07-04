@@ -1,226 +1,302 @@
 import time
-import random
 import statistics
-from frsa_rrsa_redacted import fRSA_keygen, fRSA_encrypt, fRSA_decrypt, rRSA_keygen, rRSA_encrypt, rRSA_decrypt
+import matplotlib.pyplot as plt
+import numpy as np
+from typing import Dict, List, Tuple
+import sys
+import os
 
-def benchmark_frsa():
-    print("=== fRSA Performance Benchmarks ===")
-    
-    # Key generation benchmark
-    start = time.time()
-    pub_key, priv_key = fRSA_keygen(security_level=128)
-    keygen_time = time.time() - start
-    print(f"Key Generation Time: {keygen_time:.4f} seconds")
-    
-    # Encryption benchmark
-    message = random.randint(1000, 9999)
-    start = time.time()
-    ciphertext = fRSA_encrypt(message, pub_key)
-    encrypt_time = time.time() - start
-    print(f"Encryption Time: {encrypt_time:.6f} seconds")
-    
-    # Decryption benchmark
-    start = time.time()
-    decrypted = fRSA_decrypt(ciphertext, priv_key)
-    decrypt_time = time.time() - start
-    print(f"Decryption Time: {decrypt_time:.6f} seconds")
-    
-    # Correctness check
-    correctness = (message == decrypted)
-    print(f"Correctness Check: {correctness}")
-    print(f"Original: {message}, Decrypted: {decrypted}")
-    
-    return {
-        'keygen_time': keygen_time,
-        'encrypt_time': encrypt_time,
-        'decrypt_time': decrypt_time,
-        'correctness': correctness,
-        'total_time': keygen_time + encrypt_time + decrypt_time
-    }
+# Add the current directory to path to import our modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-def benchmark_rrsa():
-    print("\n=== rRSA Performance Benchmarks ===")
-    
-    # Key generation benchmark
-    start = time.time()
-    pub_key, priv_key = rRSA_keygen(security_level=128)
-    keygen_time = time.time() - start
-    print(f"Key Generation Time: {keygen_time:.4f} seconds")
-    
-    # Encryption benchmark
-    message = random.randint(1000, 9999)
-    start = time.time()
-    ciphertext = rRSA_encrypt(message, pub_key)
-    encrypt_time = time.time() - start
-    print(f"Encryption Time: {encrypt_time:.6f} seconds")
-    
-    # Decryption benchmark
-    start = time.time()
-    decrypted = rRSA_decrypt(ciphertext, priv_key)
-    decrypt_time = time.time() - start
-    print(f"Decryption Time: {decrypt_time:.6f} seconds")
-    
-    # Correctness check
-    correctness = (message == decrypted)
-    print(f"Correctness Check: {correctness}")
-    print(f"Original: {message}, Decrypted: {decrypted}")
-    
-    return {
-        'keygen_time': keygen_time,
-        'encrypt_time': encrypt_time,
-        'decrypt_time': decrypt_time,
-        'correctness': correctness,
-        'total_time': keygen_time + encrypt_time + decrypt_time
-    }
+try:
+    from frsa_rrsa_redacted import fRSA_keygen, fRSA_encrypt, fRSA_decrypt
+    from Crypto.PublicKey import RSA
+    from Crypto.Cipher import PKCS1_OAEP
+    from Crypto.Random import get_random_bytes
+    print("✓ All imports successful")
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Please ensure all required modules are installed")
+    sys.exit(1)
 
-def run_multiple_benchmarks(runs=10):
-    print(f"\n=== Running {runs} Benchmark Iterations ===")
+def benchmark_frsa(key_size: int = 1024, num_iterations: int = 10) -> Dict[str, float]:
+    """Benchmark fRSA operations with error handling"""
     
-    frsa_results = []
-    rrsa_results = []
+    print(f"\n=== fRSA Benchmarks (Key Size: {key_size} bits) ===")
     
-    for i in range(runs):
-        print(f"\n--- Run {i+1}/{runs} ---")
+    # Key Generation Benchmark
+    keygen_times = []
+    for i in range(num_iterations):
+        try:
+            start_time = time.time()
+            pub_key, priv_key = fRSA_keygen(key_size)
+            end_time = time.time()
+            keygen_times.append(end_time - start_time)
+            print(f"Key generation {i+1}/{num_iterations}: {end_time - start_time:.4f}s")
+        except Exception as e:
+            print(f"Key generation failed on iteration {i+1}: {e}")
+            continue
+    
+    if not keygen_times:
+        raise RuntimeError("All key generation attempts failed")
+    
+    # Use the last successfully generated key pair
+    print(f"Using key pair from iteration {len(keygen_times)}")
+    
+    # Encryption Benchmark
+    test_messages = [42, 123, 1000, 9999]  # Small test messages
+    encryption_times = []
+    decryption_times = []
+    
+    for msg in test_messages:
+        # Ensure message is smaller than modulus
+        n = pub_key[0]
+        if msg >= n:
+            msg = msg % (n - 1)
         
-        # fRSA benchmark
-        frsa_result = benchmark_frsa()
-        frsa_results.append(frsa_result)
-        
-        # rRSA benchmark  
-        rrsa_result = benchmark_rrsa()
-        rrsa_results.append(rrsa_result)
+        for i in range(num_iterations // len(test_messages)):
+            try:
+                # Encryption
+                start_time = time.time()
+                ciphertext = fRSA_encrypt(msg, pub_key)
+                end_time = time.time()
+                encryption_times.append(end_time - start_time)
+                
+                # Decryption
+                start_time = time.time()
+                decrypted = fRSA_decrypt(ciphertext, priv_key)
+                end_time = time.time()
+                decryption_times.append(end_time - start_time)
+                
+                # Verify correctness
+                if decrypted != msg:
+                    print(f"⚠️  Verification failed: {msg} -> {decrypted}")
+                else:
+                    print(f"✓ Message {msg} encrypted/decrypted successfully")
+                
+            except Exception as e:
+                print(f"Encryption/Decryption failed for message {msg}: {e}")
+                continue
     
-    return frsa_results, rrsa_results
-
-def analyze_results(frsa_results, rrsa_results):
-    print("\n" + "="*60)
-    print("COMPREHENSIVE PERFORMANCE ANALYSIS")
-    print("="*60)
+    if not encryption_times or not decryption_times:
+        raise RuntimeError("All encryption/decryption attempts failed")
     
     # Calculate statistics
-    frsa_keygen_times = [r['keygen_time'] for r in frsa_results]
-    frsa_encrypt_times = [r['encrypt_time'] for r in frsa_results] 
-    frsa_decrypt_times = [r['decrypt_time'] for r in frsa_results]
-    frsa_total_times = [r['total_time'] for r in frsa_results]
-    
-    rrsa_keygen_times = [r['keygen_time'] for r in rrsa_results]
-    rrsa_encrypt_times = [r['encrypt_time'] for r in rrsa_results]
-    rrsa_decrypt_times = [r['decrypt_time'] for r in rrsa_results]
-    rrsa_total_times = [r['total_time'] for r in rrsa_results]
-    
-    # Print detailed comparison
-    print("\nKEY GENERATION PERFORMANCE:")
-    print("-" * 40)
-    print(f"fRSA Average: {statistics.mean(frsa_keygen_times):.4f}s")
-    print(f"fRSA Std Dev: {statistics.stdev(frsa_keygen_times):.4f}s")
-    print(f"rRSA Average: {statistics.mean(rrsa_keygen_times):.4f}s") 
-    print(f"rRSA Std Dev: {statistics.stdev(rrsa_keygen_times):.4f}s")
-    
-    keygen_winner = "fRSA" if statistics.mean(frsa_keygen_times) < statistics.mean(rrsa_keygen_times) else "rRSA"
-    keygen_improvement = abs(statistics.mean(frsa_keygen_times) - statistics.mean(rrsa_keygen_times)) / max(statistics.mean(frsa_keygen_times), statistics.mean(rrsa_keygen_times)) * 100
-    print(f"Winner: {keygen_winner} ({keygen_improvement:.1f}% faster)")
-    
-    print("\nENCRYPTION PERFORMANCE:")
-    print("-" * 40)
-    print(f"fRSA Average: {statistics.mean(frsa_encrypt_times):.6f}s")
-    print(f"fRSA Std Dev: {statistics.stdev(frsa_encrypt_times):.6f}s")
-    print(f"rRSA Average: {statistics.mean(rrsa_encrypt_times):.6f}s")
-    print(f"rRSA Std Dev: {statistics.stdev(rrsa_encrypt_times):.6f}s")
-    
-    encrypt_winner = "fRSA" if statistics.mean(frsa_encrypt_times) < statistics.mean(rrsa_encrypt_times) else "rRSA"
-    encrypt_improvement = abs(statistics.mean(frsa_encrypt_times) - statistics.mean(rrsa_encrypt_times)) / max(statistics.mean(frsa_encrypt_times), statistics.mean(rrsa_encrypt_times)) * 100
-    print(f"Winner: {encrypt_winner} ({encrypt_improvement:.1f}% faster)")
-    
-    print("\nDECRYPTION PERFORMANCE:")
-    print("-" * 40)
-    print(f"fRSA Average: {statistics.mean(frsa_decrypt_times):.6f}s")
-    print(f"fRSA Std Dev: {statistics.stdev(frsa_decrypt_times):.6f}s")
-    print(f"rRSA Average: {statistics.mean(rrsa_decrypt_times):.6f}s")
-    print(f"rRSA Std Dev: {statistics.stdev(rrsa_decrypt_times):.6f}s")
-    
-    decrypt_winner = "fRSA" if statistics.mean(frsa_decrypt_times) < statistics.mean(rrsa_decrypt_times) else "rRSA"
-    decrypt_improvement = abs(statistics.mean(frsa_decrypt_times) - statistics.mean(rrsa_decrypt_times)) / max(statistics.mean(frsa_decrypt_times), statistics.mean(rrsa_decrypt_times)) * 100
-    print(f"Winner: {decrypt_winner} ({decrypt_improvement:.1f}% faster)")
-    
-    print("\nOVERALL PERFORMANCE:")
-    print("-" * 40)
-    print(f"fRSA Total Average: {statistics.mean(frsa_total_times):.4f}s")
-    print(f"rRSA Total Average: {statistics.mean(rrsa_total_times):.4f}s")
-    
-    overall_winner = "fRSA" if statistics.mean(frsa_total_times) < statistics.mean(rrsa_total_times) else "rRSA"
-    overall_improvement = abs(statistics.mean(frsa_total_times) - statistics.mean(rrsa_total_times)) / max(statistics.mean(frsa_total_times), statistics.mean(rrsa_total_times)) * 100
-    
-    print(f"\nOVERALL WINNER: {overall_winner}")
-    print(f"Performance Advantage: {overall_improvement:.1f}% faster")
-    
-    # Correctness summary
-    frsa_correctness = all(r['correctness'] for r in frsa_results)
-    rrsa_correctness = all(r['correctness'] for r in rrsa_results)
-    
-    print(f"\nCORRECTNESS:")
-    print(f"fRSA: {'PASS' if frsa_correctness else 'FAIL'}")
-    print(f"rRSA: {'PASS' if rrsa_correctness else 'FAIL'}")
-    
-    return {
-        'keygen_winner': keygen_winner,
-        'encrypt_winner': encrypt_winner, 
-        'decrypt_winner': decrypt_winner,
-        'overall_winner': overall_winner,
-        'overall_improvement': overall_improvement
+    results = {
+        'key_generation': {
+            'mean': statistics.mean(keygen_times),
+            'median': statistics.median(keygen_times),
+            'std': statistics.stdev(keygen_times) if len(keygen_times) > 1 else 0,
+            'min': min(keygen_times),
+            'max': max(keygen_times)
+        },
+        'encryption': {
+            'mean': statistics.mean(encryption_times),
+            'median': statistics.median(encryption_times),
+            'std': statistics.stdev(encryption_times) if len(encryption_times) > 1 else 0,
+            'min': min(encryption_times),
+            'max': max(encryption_times)
+        },
+        'decryption': {
+            'mean': statistics.mean(decryption_times),
+            'median': statistics.median(decryption_times),
+            'std': statistics.stdev(decryption_times) if len(decryption_times) > 1 else 0,
+            'min': min(decryption_times),
+            'max': max(decryption_times)
+        }
     }
+    
+    return results
 
-def security_level_comparison():
-    print("\n" + "="*60)
-    print("SECURITY LEVEL COMPARISON")
-    print("="*60)
+def benchmark_standard_rsa(key_size: int = 1024, num_iterations: int = 10) -> Dict[str, float]:
+    """Benchmark standard RSA for comparison"""
     
-    security_levels = [128, 256]
+    print(f"\n=== Standard RSA Benchmarks (Key Size: {key_size} bits) ===")
     
-    for level in security_levels:
-        print(f"\n--- Security Level: {level} bits ---")
-        
-        # fRSA
-        start = time.time()
-        pub_key, priv_key = fRSA_keygen(security_level=level)
-        frsa_time = time.time() - start
-        
-        # rRSA
-        start = time.time()
-        pub_key, priv_key = rRSA_keygen(security_level=level)
-        rrsa_time = time.time() - start
-        
-        print(f"fRSA Key Generation: {frsa_time:.4f}s")
-        print(f"rRSA Key Generation: {rrsa_time:.4f}s")
-        
-        winner = "fRSA" if frsa_time < rrsa_time else "rRSA"
-        improvement = abs(frsa_time - rrsa_time) / max(frsa_time, rrsa_time) * 100
-        print(f"Winner: {winner} ({improvement:.1f}% faster)")
+    # Key Generation Benchmark
+    keygen_times = []
+    for i in range(num_iterations):
+        try:
+            start_time = time.time()
+            key = RSA.generate(key_size)
+            end_time = time.time()
+            keygen_times.append(end_time - start_time)
+            print(f"Key generation {i+1}/{num_iterations}: {end_time - start_time:.4f}s")
+        except Exception as e:
+            print(f"RSA key generation failed on iteration {i+1}: {e}")
+            continue
+    
+    if not keygen_times:
+        raise RuntimeError("All RSA key generation attempts failed")
+    
+    # Encryption/Decryption Benchmark
+    test_data = get_random_bytes(64)  # 64 bytes of random data
+    encryption_times = []
+    decryption_times = []
+    
+    for i in range(num_iterations):
+        try:
+            key = RSA.generate(key_size)
+            cipher = PKCS1_OAEP.new(key)
+            
+            # Encryption
+            start_time = time.time()
+            ciphertext = cipher.encrypt(test_data)
+            end_time = time.time()
+            encryption_times.append(end_time - start_time)
+            
+            # Decryption
+            start_time = time.time()
+            decrypted = cipher.decrypt(ciphertext)
+            end_time = time.time()
+            decryption_times.append(end_time - start_time)
+            
+            # Verify
+            if decrypted != test_data:
+                print(f"⚠️  RSA verification failed")
+            else:
+                print(f"✓ RSA encryption/decryption successful")
+                
+        except Exception as e:
+            print(f"RSA encryption/decryption failed: {e}")
+            continue
+    
+    if not encryption_times or not decryption_times:
+        raise RuntimeError("All RSA encryption/decryption attempts failed")
+    
+    # Calculate statistics
+    results = {
+        'key_generation': {
+            'mean': statistics.mean(keygen_times),
+            'median': statistics.median(keygen_times),
+            'std': statistics.stdev(keygen_times) if len(keygen_times) > 1 else 0,
+            'min': min(keygen_times),
+            'max': max(keygen_times)
+        },
+        'encryption': {
+            'mean': statistics.mean(encryption_times),
+            'median': statistics.median(encryption_times),
+            'std': statistics.stdev(encryption_times) if len(encryption_times) > 1 else 0,
+            'min': min(encryption_times),
+            'max': max(encryption_times)
+        },
+        'decryption': {
+            'mean': statistics.mean(decryption_times),
+            'median': statistics.median(decryption_times),
+            'std': statistics.stdev(decryption_times) if len(decryption_times) > 1 else 0,
+            'min': min(decryption_times),
+            'max': max(decryption_times)
+        }
+    }
+    
+    return results
+
+def create_comparison_charts(frsa_results: Dict, rsa_results: Dict, key_size: int):
+    """Create comparison charts"""
+    
+    operations = ['key_generation', 'encryption', 'decryption']
+    operation_labels = ['Key Generation', 'Encryption', 'Decryption']
+    
+    frsa_means = [frsa_results[op]['mean'] for op in operations]
+    rsa_means = [rsa_results[op]['mean'] for op in operations]
+    
+    x = np.arange(len(operation_labels))
+    width = 0.35
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    bars1 = ax.bar(x - width/2, frsa_means, width, label='fRSA', alpha=0.8, color='blue')
+    bars2 = ax.bar(x + width/2, rsa_means, width, label='Standard RSA', alpha=0.8, color='red')
+    
+    ax.set_xlabel('Operations')
+    ax.set_ylabel('Time (seconds)')
+    ax.set_title(f'fRSA vs Standard RSA Performance Comparison ({key_size}-bit keys)')
+    ax.set_xticks(x)
+    ax.set_xticklabels(operation_labels)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    def add_value_labels(bars):
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height:.4f}s',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3),  # 3 points vertical offset
+                       textcoords="offset points",
+                       ha='center', va='bottom',
+                       fontsize=9)
+    
+    add_value_labels(bars1)
+    add_value_labels(bars2)
+    
+    plt.tight_layout()
+    plt.savefig(f'frsa_vs_rsa_comparison_{key_size}bit.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+def print_detailed_results(results: Dict, algorithm: str):
+    """Print detailed benchmark results"""
+    print(f"\n=== {algorithm} Detailed Results ===")
+    
+    for operation, stats in results.items():
+        print(f"\n{operation.replace('_', ' ').title()}:")
+        print(f"  Mean: {stats['mean']:.6f} seconds")
+        print(f"  Median: {stats['median']:.6f} seconds")
+        print(f"  Std Dev: {stats['std']:.6f} seconds")
+        print(f"  Min: {stats['min']:.6f} seconds")
+        print(f"  Max: {stats['max']:.6f} seconds")
 
 def main():
-    print("CRYPTOGRAPHIC PERFORMANCE BENCHMARK SUITE")
-    print("="*60)
+    """Main benchmarking function"""
     
-    # Single run benchmarks
-    print("\nSINGLE RUN BENCHMARKS:")
-    frsa_single = benchmark_frsa()
-    rrsa_single = benchmark_rrsa()
+    key_sizes = [1024, 2048]
+    num_iterations = 5  # Reduced for faster testing
     
-    # Multiple run analysis
-    frsa_results, rrsa_results = run_multiple_benchmarks(runs=5)
+    print("🚀 Starting fRSA vs Standard RSA Benchmarking")
+    print("=" * 50)
     
-    # Comprehensive analysis
-    analysis = analyze_results(frsa_results, rrsa_results)
+    for key_size in key_sizes:
+        try:
+            print(f"\n🔑 Testing with {key_size}-bit keys")
+            
+            # Benchmark fRSA
+            print("\n🧮 Benchmarking fRSA...")
+            frsa_results = benchmark_frsa(key_size, num_iterations)
+            print_detailed_results(frsa_results, "fRSA")
+            
+            # Benchmark standard RSA
+            print("\n🔐 Benchmarking Standard RSA...")
+            rsa_results = benchmark_standard_rsa(key_size, num_iterations)
+            print_detailed_results(rsa_results, "Standard RSA")
+            
+            # Create comparison charts
+            print("\n📊 Creating comparison charts...")
+            create_comparison_charts(frsa_results, rsa_results, key_size)
+            
+            # Performance comparison summary
+            print(f"\n📈 Performance Summary for {key_size}-bit keys:")
+            print("-" * 50)
+            
+            for operation in ['key_generation', 'encryption', 'decryption']:
+                frsa_time = frsa_results[operation]['mean']
+                rsa_time = rsa_results[operation]['mean']
+                
+                if rsa_time > 0:
+                    ratio = frsa_time / rsa_time
+                    if ratio > 1:
+                        print(f"{operation.replace('_', ' ').title()}: fRSA is {ratio:.2f}x SLOWER than RSA")
+                    else:
+                        print(f"{operation.replace('_', ' ').title()}: fRSA is {1/ratio:.2f}x FASTER than RSA")
+                else:
+                    print(f"{operation.replace('_', ' ').title()}: Cannot compare (RSA time = 0)")
+                    
+        except Exception as e:
+            print(f"❌ Benchmarking failed for {key_size}-bit keys: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
     
-    # Security level comparison
-    security_level_comparison()
-    
-    # Final summary
-    print("\n" + "="*60)
-    print("FINAL SUMMARY")
-    print("="*60)
-    print(f"Overall Performance Winner: {analysis['overall_winner']}")
-    print(f"Performance Advantage: {analysis['overall_improvement']:.1f}%")
-    print("="*60)
+    print("\n✅ Benchmarking completed!")
 
 if __name__ == "__main__":
     main()
